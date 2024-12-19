@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>語音助理</title>
+    <link rel="icon" type="image/png" href="/static/images/favicon.png">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/cursor.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="theme-selector">
+                <select id="themeSelector">
+                    <option value="default">預設主題</option>
+                    <option value="dark">深色主題</option>
+                    <option value="warm">暖色主題</option>
+                    <option value="ocean">海洋主題</option>
+                    <option value="forest">森林主題</option>
+                </select>
+            </div>
+        </header>
+
+        <main>
+            <div class="avatar-section">
+                <div class="avatar-container">
+                    <img id="avatar" src="/static/images/default-avatar.png" alt="AI Assistant">
+                    <div class="avatar-upload">
+                        <label for="avatarUpload" class="avatar-upload-label">
+                            <i class="fas fa-camera"></i>
+                            更換頭貼
+                        </label>
+                        <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <button id="startListeningBtn" class="control-btn">
+                    <i class="fas fa-microphone"></i>
+                    開始聆聽
+                </button>
+                <div id="notification" class="notification" style="display: none;"></div>
+            </div>
+
+            <div class="audio-section">
+                <div id="waveform"></div>
+                <div id="timeDisplay" class="time-display">0:00 / 0:00</div>
+            </div>
+
+            <div class="command-section">
+                <div class="upload-section">
+                    <h3>添加新指令</h3>
+                    <form id="uploadForm" class="upload-form">
+                        <div class="form-group">
+                            <label for="command">指令文字：</label>
+                            <input type="text" id="command" name="command" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="audio">音頻文件：</label>
+                            <input type="file" id="audio" name="audio" accept="audio/*" required>
+                        </div>
+                        <button type="submit" class="submit-btn">
+                            <i class="fas fa-plus"></i>
+                            添加指令
+                        </button>
+                    </form>
+                </div>
+
+                <div class="command-list-section">
+                    <h3>指令列表</h3>
+                    <div id="commandList" class="command-list"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/storage-manager.js"></script>
+    <script src="/static/js/theme-manager.js"></script>
+    <script src="/static/js/audio-processor.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

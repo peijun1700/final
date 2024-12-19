@@ -1,0 +1,13 @@
+flask>=2.0.0
+SpeechRecognition>=3.10.0
+pygame>=2.5.0
+Pillow>=10.0.0
+python-dotenv>=1.0.0
+websockets>=11.0.0
+numpy>=1.24.0
+gunicorn>=21.0.0
+Werkzeug>=2.3.7
+itsdangerous>=2.0.0
+click>=8.0.0
+Jinja2>=3.0.0
+MarkupSafe>=2.0.0
