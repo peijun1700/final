@@ -9,6 +9,11 @@ import time
 from werkzeug.utils import secure_filename
 import uuid
 from datetime import datetime
+import logging
+
+# 配置日誌
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # 添加secret key用於session
@@ -95,6 +100,26 @@ class VoiceAssistant:
         return None
 
 assistant = VoiceAssistant()
+
+# 錯誤處理
+@app.errorhandler(404)
+def not_found_error(error):
+    logger.error(f"404 error: {error}")
+    return jsonify({"error": "Not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"500 error: {error}")
+    return jsonify({"error": "Internal server error"}), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logger.error(f"Unhandled exception: {str(e)}")
+    return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "healthy"}), 200
 
 @app.route('/')
 def index():

@@ -3,9 +3,11 @@ builder = "NIXPACKS"
 
 [deploy]
 startCommand = "gunicorn main:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120"
-healthcheckPath = "/"
+healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
 
 [env]
 PYTHON_VERSION = "3.9"
+FLASK_ENV = "production"
+FLASK_DEBUG = "0"
