@@ -18,7 +18,13 @@ app.static_folder = 'static'
 app.static_url_path = '/static'
 app.template_folder = 'templates'
 
-UPLOAD_FOLDER = 'uploads'
+# 確保上傳目錄存在
+UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 ALLOWED_EXTENSIONS = {
     # 音檔格式
     'mp3',  # MPEG Layer-3
@@ -32,11 +38,6 @@ ALLOWED_EXTENSIONS = {
     'alac', # Apple Lossless Audio Codec
     'opus'  # Opus Interactive Audio Codec
 }
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -402,4 +403,13 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=port, debug=False)
 else:
     # Gunicorn 使用
+    # 確保必要的目錄存在
+    for directory in ['static', 'uploads', 'templates']:
+        path = os.path.join(os.getcwd(), directory)
+        if not os.path.exists(path):
+            os.makedirs(path)
+    
+    # 設置生產環境配置
+    app.config['ENV'] = 'production'
+    app.config['DEBUG'] = False
     application = app
