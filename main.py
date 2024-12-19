@@ -22,8 +22,9 @@ UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max-limit
 
-# 允許的音檔格式
+# 允許的檔案格式
 ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma', 'aiff', 'alac', 'opus'}
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 def get_user_folder():
     if 'user_id' not in session:
@@ -33,8 +34,11 @@ def get_user_folder():
         os.makedirs(user_folder)
     return user_folder
 
-def allowed_file(filename):
+def allowed_audio_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_AUDIO_EXTENSIONS
+
+def allowed_image_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
 
 # 確保必要的目錄存在
 def ensure_directories():
@@ -120,7 +124,7 @@ def add_command():
         if not audio_file or not audio_file.filename:
             return jsonify({"error": "No audio file selected"}), 400
         
-        if not allowed_file(audio_file.filename):
+        if not allowed_audio_file(audio_file.filename):
             return jsonify({"error": "Invalid audio format"}), 400
         
         user_folder = get_user_folder()
@@ -176,6 +180,40 @@ def process_command():
         return jsonify({"match": False, "message": "No matching command found"})
     except Exception as e:
         logger.error(f"Process command failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/upload-avatar', methods=['POST'])
+def upload_avatar():
+    try:
+        if 'avatar' not in request.files:
+            return jsonify({"error": "No avatar file"}), 400
+        
+        avatar_file = request.files['avatar']
+        if not avatar_file or not avatar_file.filename:
+            return jsonify({"error": "No avatar file selected"}), 400
+        
+        if not allowed_image_file(avatar_file.filename):
+            return jsonify({"error": "Invalid image format"}), 400
+        
+        user_folder = get_user_folder()
+        filename = secure_filename('avatar.' + avatar_file.filename.rsplit('.', 1)[1].lower())
+        filepath = os.path.join(user_folder, filename)
+        
+        avatar_file.save(filepath)
+        
+        settings_file = os.path.join(user_folder, 'settings.json')
+        settings = {'name': '語音助理', 'avatar': filename}
+        if os.path.exists(settings_file):
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                settings['avatar'] = filename
+        
+        with open(settings_file, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False)
+        
+        return jsonify({"message": "Avatar uploaded successfully", "avatar": filename})
+    except Exception as e:
+        logger.error(f"Upload avatar failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/uploads/<path:filename>')
