@@ -396,6 +396,10 @@ def process_command():
         return jsonify({'error': '處理指令失敗'}), 500
 
 if __name__ == '__main__':
+    # 本地開發使用
     port = int(os.environ.get('PORT', 5003))
     print(f"Starting server on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)
+else:
+    # Gunicorn 使用
+    application = app
