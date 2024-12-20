@@ -188,17 +188,25 @@ class AudioProcessor {
                 if (data.audio) {
                     try {
                         console.log('播放音頻:', data.audio);
+                        // 在播放音頻前確保麥克風關閉
+                        if (this.recognition) {
+                            this.recognition.stop();
+                            await new Promise(resolve => setTimeout(resolve, 100)); // 等待麥克風完全關閉
+                        }
+                        
                         await this.playAudio('/uploads/' + data.audio);
                         console.log('音頻播放完成');
                         
                         if (wasListening) {
-                            // 立即恢復語音識別
+                            // 等待一小段時間再重新啟動麥克風，避免回音
+                            await new Promise(resolve => setTimeout(resolve, 200));
                             this.startListening();
                         }
                     } catch (error) {
                         console.error('音頻播放失敗:', error);
                         showNotification('音頻播放失敗', 'error');
                         if (wasListening) {
+                            await new Promise(resolve => setTimeout(resolve, 200));
                             this.startListening();
                         }
                     }
