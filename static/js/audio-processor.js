@@ -295,7 +295,7 @@ class AudioProcessor {
             source.connect(this.audioContext.destination);
 
             // 更新波形顯示
-            this.wavesurfer.loadDecodedBuffer(audioBuffer);
+            await this.wavesurfer.load(url);
 
             // 同步播放
             source.start(0);
