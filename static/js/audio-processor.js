@@ -6,9 +6,23 @@ class AudioProcessor {
         this.lastProcessedText = '';
         this.processingTimeout = null;
         this.restartAttempts = 0;
-        this.maxRestartAttempts = 5;
-        this.restartDelay = 100; // 降低重啟延遲
+        this.maxRestartAttempts = 3;
+        this.restartDelay = 50; // 降低重啟延遲
+        this.noSpeechTimeout = null;
+        this.audioContext = null;
         this.initSpeechRecognition();
+        this.initAudioContext();
+    }
+
+    initAudioContext() {
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                latencyHint: 'interactive',
+                sampleRate: 48000
+            });
+        } catch (error) {
+            console.error('無法初始化音頻上下文:', error);
+        }
     }
 
     initSpeechRecognition() {
@@ -17,34 +31,34 @@ class AudioProcessor {
             this.recognition.continuous = true;
             this.recognition.interimResults = true;
             this.recognition.lang = 'zh-TW';
-            this.recognition.maxAlternatives = 1; // 減少候選數量以提高速度
+            this.recognition.maxAlternatives = 1;
 
             this.recognition.onstart = () => {
-                console.log('語音識別已啟動');
-                showNotification('開始聆聽...', 'info');
                 this.restartAttempts = 0;
+                this.clearNoSpeechTimeout();
+                this.setNoSpeechTimeout();
+                showNotification('開始聆聽...', 'info', 1000);
             };
 
             this.recognition.onend = () => {
-                console.log('語音識別已結束');
-                if (this.isListening) {
-                    if (this.restartAttempts < this.maxRestartAttempts) {
-                        this.restartAttempts++;
-                        console.log(`重新啟動語音識別 (${this.restartAttempts}/${this.maxRestartAttempts})`);
-                        // 立即重啟
+                this.clearNoSpeechTimeout();
+                
+                if (this.isListening && this.restartAttempts < this.maxRestartAttempts) {
+                    this.restartAttempts++;
+                    // 使用 requestAnimationFrame 優化重啟時機
+                    requestAnimationFrame(() => {
                         if (this.isListening) {
                             try {
                                 this.recognition.start();
                             } catch (error) {
-                                console.error('重新啟動失敗:', error);
+                                console.error('重啟失敗:', error);
                                 this.handleRecognitionError(error);
                             }
                         }
-                    } else {
-                        console.log('達到最大重試次數');
-                        this.isListening = false;
-                        showNotification('請重新啟動語音識別', 'warning');
-                    }
+                    });
+                } else if (this.restartAttempts >= this.maxRestartAttempts) {
+                    this.isListening = false;
+                    showNotification('請重新開始語音識別', 'warning');
                 }
             };
 
@@ -54,21 +68,16 @@ class AudioProcessor {
                     
                     if (result.isFinal) {
                         const text = result[0].transcript.trim().toLowerCase();
-                        console.log('最終識別結果:', text);
-                        
                         if (text && text !== this.lastProcessedText) {
                             this.lastProcessedText = text;
-                            showNotification('識別到: ' + text, 'info');
-                            
-                            // 立即處理指令
+                            this.clearNoSpeechTimeout();
                             await this.processCommand(text);
+                            this.setNoSpeechTimeout();
                         }
                     } else {
-                        // 顯示臨時結果以提供即時反饋
                         const tempText = result[0].transcript;
                         if (tempText) {
-                            console.log('臨時識別:', tempText);
-                            showNotification('正在識別: ' + tempText, 'info', 500);
+                            showNotification(tempText, 'info', 300);
                         }
                     }
                 } catch (error) {
@@ -77,7 +86,9 @@ class AudioProcessor {
             };
 
             this.recognition.onerror = (event) => {
-                this.handleRecognitionError(event);
+                if (event.error !== 'no-speech') {
+                    this.handleRecognitionError(event);
+                }
             };
         } else {
             console.error('瀏覽器不支援語音識別');
@@ -85,13 +96,43 @@ class AudioProcessor {
         }
     }
 
+    setNoSpeechTimeout() {
+        this.clearNoSpeechTimeout();
+        this.noSpeechTimeout = setTimeout(() => {
+            if (this.isListening) {
+                this.restartRecognition();
+            }
+        }, 10000); // 10秒無語音自動重啟
+    }
+
+    clearNoSpeechTimeout() {
+        if (this.noSpeechTimeout) {
+            clearTimeout(this.noSpeechTimeout);
+            this.noSpeechTimeout = null;
+        }
+    }
+
+    restartRecognition() {
+        if (this.recognition && this.isListening) {
+            try {
+                this.recognition.stop();
+                requestAnimationFrame(() => {
+                    if (this.isListening) {
+                        this.recognition.start();
+                    }
+                });
+            } catch (error) {
+                console.error('重啟識別失敗:', error);
+            }
+        }
+    }
+
     handleRecognitionError(event) {
-        console.error('語音識別錯誤:', event.error);
         let message = '語音識別錯誤';
         
         switch (event.error) {
-            case 'no-speech':
-                message = '未檢測到語音';
+            case 'network':
+                message = '網絡連接不穩定';
                 break;
             case 'audio-capture':
                 message = '無法訪問麥克風';
@@ -99,12 +140,8 @@ class AudioProcessor {
             case 'not-allowed':
                 message = '請允許使用麥克風';
                 break;
-            case 'network':
-                message = '網絡連接出錯';
-                break;
             case 'aborted':
-                message = '語音識別被中斷';
-                break;
+                return; // 忽略中斷錯誤
         }
         
         showNotification(message, 'error');
@@ -127,33 +164,37 @@ class AudioProcessor {
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
-                    latency: 0, // 最小延遲
-                    sampleRate: 48000 // 提高採樣率
+                    latency: 0,
+                    sampleRate: 48000
                 } 
             });
+
+            if (this.audioContext && this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
+
             stream.getTracks().forEach(track => track.stop());
             
             this.isListening = true;
             this.lastProcessedText = '';
             this.restartAttempts = 0;
-            await this.recognition.start();
+            this.recognition.start();
             
         } catch (error) {
-            console.error('啟動語音識別失敗:', error);
+            console.error('啟動失敗:', error);
             this.handleRecognitionError(error);
         }
     }
 
     stopListening() {
+        this.isListening = false;
+        this.clearNoSpeechTimeout();
         if (this.recognition) {
-            this.isListening = false;
-            this.restartAttempts = this.maxRestartAttempts;
             try {
                 this.recognition.stop();
             } catch (error) {
-                console.error('停止語音識別時出錯:', error);
+                console.error('停止識別失敗:', error);
             }
-            this.lastProcessedText = '';
         }
     }
 
@@ -161,8 +202,6 @@ class AudioProcessor {
         if (!text || text.length < 2) return;
 
         try {
-            console.log('處理指令:', text);
-            
             const response = await fetch('/process-command', {
                 method: 'POST',
                 headers: {
@@ -171,78 +210,75 @@ class AudioProcessor {
                 body: JSON.stringify({ command: text })
             });
 
-            if (!response.ok) throw new Error('處理指令失敗');
+            if (!response.ok) throw new Error('處理失敗');
 
             const data = await response.json();
             
             if (data.match) {
-                console.log('找到匹配指令:', data.command);
-                
                 const wasListening = this.isListening;
                 if (wasListening) {
                     this.stopListening();
                 }
 
-                showNotification(`執行指令: ${data.command}`, 'success');
+                showNotification(`執行: ${data.command}`, 'success', 1000);
                 
                 if (data.audio) {
                     try {
-                        console.log('播放音頻:', data.audio);
-                        // 在播放音頻前確保麥克風關閉
-                        if (this.recognition) {
-                            this.recognition.stop();
-                            await new Promise(resolve => setTimeout(resolve, 100)); // 等待麥克風完全關閉
+                        if (this.audioContext && this.audioContext.state === 'suspended') {
+                            await this.audioContext.resume();
                         }
-                        
                         await this.playAudio('/uploads/' + data.audio);
-                        console.log('音頻播放完成');
                         
                         if (wasListening) {
-                            // 等待一小段時間再重新啟動麥克風，避免回音
-                            await new Promise(resolve => setTimeout(resolve, 200));
-                            this.startListening();
+                            // 使用 requestAnimationFrame 優化重啟時機
+                            requestAnimationFrame(() => {
+                                this.startListening();
+                            });
                         }
                     } catch (error) {
-                        console.error('音頻播放失敗:', error);
-                        showNotification('音頻播放失敗', 'error');
+                        console.error('播放失敗:', error);
+                        showNotification('播放失敗', 'error');
                         if (wasListening) {
-                            await new Promise(resolve => setTimeout(resolve, 200));
                             this.startListening();
                         }
                     }
                 }
-            } else {
-                showNotification('未找到匹配的指令', 'info');
             }
         } catch (error) {
-            console.error('處理指令失敗:', error);
-            showNotification('處理指令失敗: ' + error.message, 'error');
+            console.error('處理失敗:', error);
+            showNotification('處理失敗', 'error');
         }
     }
 
     async playAudio(audioUrl) {
         try {
+            if (this.audioContext && this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
             await this.wavesurfer.load(audioUrl);
             this.wavesurfer.play();
             return new Promise((resolve) => {
                 this.wavesurfer.once('finish', resolve);
             });
         } catch (error) {
-            console.error('播放音頻出錯:', error);
+            console.error('播放出錯:', error);
             throw error;
         }
     }
 }
 
-function showNotification(message, type = 'info', duration = 3000) {
+function showNotification(message, type = 'info', duration = 2000) {
     const notification = document.getElementById('notification');
     if (notification) {
         notification.textContent = message;
         notification.className = 'notification ' + type;
         notification.style.display = 'block';
         
-        setTimeout(() => {
-            notification.style.display = 'none';
-        }, duration);
+        // 使用 requestAnimationFrame 優化動畫
+        requestAnimationFrame(() => {
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, duration);
+        });
     }
 }
