@@ -87,8 +87,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(data.error || '上傳失敗');
             }
 
-            // 更新頭像顯示
-            avatar.src = data.avatar_url + '?t=' + new Date().getTime(); // 添加時間戳防止緩存
+            // 更新頭像顯示，使用 uploads 路徑
+            avatar.src = '/uploads/' + data.avatar + '?t=' + new Date().getTime();
             showNotification('頭像更新成功', 'success');
         } catch (error) {
             console.error('上傳頭像失敗:', error);
@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', function() {
             updateCommandList();
         } catch (error) {
             console.error('上傳指令失敗:', error);
-            showNotification(error.message || '上傳失敗', 'error');
+            showNotification('上傳失敗', 'error');
         }
     });
 
@@ -139,7 +139,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch('/get-settings');
             const data = await response.json();
             if (data.avatar) {
-                avatar.src = '/static/images/' + data.avatar + '?t=' + new Date().getTime();
+                // 從 uploads 目錄獲取頭像
+                avatar.src = '/uploads/' + data.avatar + '?t=' + new Date().getTime();
             }
         } catch (error) {
             console.error('載入頭像失敗:', error);
