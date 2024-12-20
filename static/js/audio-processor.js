@@ -4,11 +4,12 @@ class AudioProcessor {
         this.isListening = false;
         this.recognition = null;
         this.lastProcessedText = '';
-        this.processingTimeout = null;
+        this.processingCommand = false;
         this.restartAttempts = 0;
         this.maxRestartAttempts = 3;
-        this.restartDelay = 50;
-        this.noSpeechTimeout = null;
+        this.restartDelay = 10; // 降低重啟延遲
+        this.commandQueue = [];
+        this.isProcessingQueue = false;
         this.audioContext = null;
         this.initSpeechRecognition();
     }
@@ -22,7 +23,6 @@ class AudioProcessor {
                 sampleRate: 48000
             });
 
-            // 如果上下文被暫停，嘗試恢復
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
             }
@@ -41,59 +41,41 @@ class AudioProcessor {
 
             this.recognition.onstart = () => {
                 this.restartAttempts = 0;
-                this.clearNoSpeechTimeout();
-                this.setNoSpeechTimeout();
-                showNotification('開始聆聽...', 'info', 1000);
+                this.isListening = true;
+                showNotification('開始聆聽...', 'info', 500);
             };
 
             this.recognition.onend = () => {
-                this.clearNoSpeechTimeout();
-                
-                if (this.isListening && this.restartAttempts < this.maxRestartAttempts) {
-                    this.restartAttempts++;
-                    setTimeout(() => {
-                        if (this.isListening) {
-                            try {
-                                this.recognition.start();
-                            } catch (error) {
-                                if (error.name !== 'InvalidStateError') {
-                                    console.error('重啟失敗:', error);
-                                    this.handleRecognitionError(error);
-                                }
-                            }
-                        }
-                    }, this.restartDelay);
-                } else if (this.restartAttempts >= this.maxRestartAttempts) {
-                    this.isListening = false;
-                    showNotification('請重新開始語音識別', 'warning');
+                if (this.isListening && !this.processingCommand) {
+                    if (this.restartAttempts < this.maxRestartAttempts) {
+                        this.restartAttempts++;
+                        this.restartRecognition();
+                    } else {
+                        this.isListening = false;
+                        showNotification('請重新開始語音識別', 'warning');
+                    }
                 }
             };
 
-            this.recognition.onresult = async (event) => {
-                try {
-                    const result = event.results[event.results.length - 1];
-                    
-                    if (result.isFinal) {
-                        const text = result[0].transcript.trim().toLowerCase();
-                        if (text && text !== this.lastProcessedText) {
-                            this.lastProcessedText = text;
-                            this.clearNoSpeechTimeout();
-                            await this.processCommand(text);
-                            this.setNoSpeechTimeout();
-                        }
-                    } else {
-                        const tempText = result[0].transcript;
-                        if (tempText) {
-                            showNotification(tempText, 'info', 300);
-                        }
+            this.recognition.onresult = (event) => {
+                const result = event.results[event.results.length - 1];
+                
+                if (result.isFinal) {
+                    const text = result[0].transcript.trim().toLowerCase();
+                    if (text && text !== this.lastProcessedText) {
+                        this.lastProcessedText = text;
+                        this.addToQueue(text);
                     }
-                } catch (error) {
-                    console.error('處理識別結果出錯:', error);
+                } else {
+                    const tempText = result[0].transcript;
+                    if (tempText) {
+                        showNotification(tempText, 'info', 300);
+                    }
                 }
             };
 
             this.recognition.onerror = (event) => {
-                if (event.error !== 'no-speech') {
+                if (event.error !== 'no-speech' && event.error !== 'aborted') {
                     this.handleRecognitionError(event);
                 }
             };
@@ -103,37 +85,38 @@ class AudioProcessor {
         }
     }
 
-    setNoSpeechTimeout() {
-        this.clearNoSpeechTimeout();
-        this.noSpeechTimeout = setTimeout(() => {
-            if (this.isListening) {
-                this.restartRecognition();
-            }
-        }, 10000);
-    }
-
-    clearNoSpeechTimeout() {
-        if (this.noSpeechTimeout) {
-            clearTimeout(this.noSpeechTimeout);
-            this.noSpeechTimeout = null;
+    addToQueue(text) {
+        this.commandQueue.push(text);
+        if (!this.isProcessingQueue) {
+            this.processQueue();
         }
     }
 
+    async processQueue() {
+        if (this.isProcessingQueue || this.commandQueue.length === 0) return;
+        
+        this.isProcessingQueue = true;
+        
+        while (this.commandQueue.length > 0) {
+            const text = this.commandQueue.shift();
+            await this.processCommand(text);
+        }
+        
+        this.isProcessingQueue = false;
+    }
+
     restartRecognition() {
-        if (this.recognition && this.isListening) {
+        if (!this.recognition || !this.isListening || this.processingCommand) return;
+        
+        setTimeout(() => {
             try {
-                this.recognition.stop();
-                setTimeout(() => {
-                    if (this.isListening) {
-                        this.recognition.start();
-                    }
-                }, this.restartDelay);
+                this.recognition.start();
             } catch (error) {
                 if (error.name !== 'InvalidStateError') {
                     console.error('重啟識別失敗:', error);
                 }
             }
-        }
+        }, this.restartDelay);
     }
 
     handleRecognitionError(event) {
@@ -149,8 +132,6 @@ class AudioProcessor {
             case 'not-allowed':
                 message = '請允許使用麥克風';
                 break;
-            case 'aborted':
-                return;
         }
         
         showNotification(message, 'error');
@@ -182,17 +163,18 @@ class AudioProcessor {
 
             stream.getTracks().forEach(track => track.stop());
             
-            if (!this.isListening) {
-                this.isListening = true;
-                this.lastProcessedText = '';
-                this.restartAttempts = 0;
-                try {
-                    this.recognition.start();
-                } catch (error) {
-                    if (error.name !== 'InvalidStateError') {
-                        console.error('啟動失敗:', error);
-                        this.handleRecognitionError(error);
-                    }
+            this.isListening = true;
+            this.lastProcessedText = '';
+            this.restartAttempts = 0;
+            this.processingCommand = false;
+            this.commandQueue = [];
+            
+            try {
+                this.recognition.start();
+            } catch (error) {
+                if (error.name !== 'InvalidStateError') {
+                    console.error('啟動失敗:', error);
+                    this.handleRecognitionError(error);
                 }
             }
         } catch (error) {
@@ -203,7 +185,8 @@ class AudioProcessor {
 
     stopListening() {
         this.isListening = false;
-        this.clearNoSpeechTimeout();
+        this.processingCommand = false;
+        this.commandQueue = [];
         if (this.recognition) {
             try {
                 this.recognition.stop();
@@ -219,6 +202,8 @@ class AudioProcessor {
         if (!text || text.length < 2) return;
 
         try {
+            this.processingCommand = true;
+            
             const response = await fetch('/process-command', {
                 method: 'POST',
                 headers: {
@@ -232,35 +217,26 @@ class AudioProcessor {
             const data = await response.json();
             
             if (data.match) {
-                const wasListening = this.isListening;
-                if (wasListening) {
-                    this.stopListening();
-                }
-
                 showNotification(`執行: ${data.command}`, 'success', 1000);
                 
                 if (data.audio) {
                     try {
                         await this.initAudioContext();
                         await this.playAudio('/uploads/' + data.audio);
-                        
-                        if (wasListening) {
-                            setTimeout(() => {
-                                this.startListening();
-                            }, this.restartDelay);
-                        }
                     } catch (error) {
                         console.error('播放失敗:', error);
                         showNotification('播放失敗', 'error');
-                        if (wasListening) {
-                            this.startListening();
-                        }
                     }
                 }
             }
         } catch (error) {
             console.error('處理失敗:', error);
             showNotification('處理失敗', 'error');
+        } finally {
+            this.processingCommand = false;
+            if (this.isListening) {
+                this.restartRecognition();
+            }
         }
     }
 
