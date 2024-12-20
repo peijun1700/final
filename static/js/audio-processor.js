@@ -7,11 +7,30 @@ class AudioProcessor {
         this.processingCommand = false;
         this.restartAttempts = 0;
         this.maxRestartAttempts = 3;
-        this.restartDelay = 10; // 降低重啟延遲
+        this.restartDelay = 10;
         this.commandQueue = [];
         this.isProcessingQueue = false;
         this.audioContext = null;
+        this.audioCache = new Map();
         this.initSpeechRecognition();
+        this.initWaveSurfer();
+    }
+
+    initWaveSurfer() {
+        this.wavesurfer.setOptions({
+            backend: 'WebAudio',
+            responsive: true,
+            normalize: true,
+            partialRender: true,
+            waveColor: '#4F4A85',
+            progressColor: '#383351',
+            cursorColor: '#383351',
+            barWidth: 3,
+            barRadius: 3,
+            cursorWidth: 1,
+            height: 80,
+            barGap: 3
+        });
     }
 
     async initAudioContext() {
@@ -198,6 +217,23 @@ class AudioProcessor {
         }
     }
 
+    async preloadAudio(url) {
+        if (this.audioCache.has(url)) {
+            return this.audioCache.get(url);
+        }
+
+        try {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+            this.audioCache.set(url, audioBuffer);
+            return audioBuffer;
+        } catch (error) {
+            console.error('預加載音頻失敗:', error);
+            throw error;
+        }
+    }
+
     async processCommand(text) {
         if (!text || text.length < 2) return;
 
@@ -222,7 +258,13 @@ class AudioProcessor {
                 if (data.audio) {
                     try {
                         await this.initAudioContext();
-                        await this.playAudio('/uploads/' + data.audio);
+                        const audioUrl = '/uploads/' + data.audio;
+                        
+                        // 預加載音頻
+                        await this.preloadAudio(audioUrl);
+                        
+                        // 使用 WebAudio 播放
+                        await this.playAudioBuffer(audioUrl);
                     } catch (error) {
                         console.error('播放失敗:', error);
                         showNotification('播放失敗', 'error');
@@ -240,16 +282,33 @@ class AudioProcessor {
         }
     }
 
-    async playAudio(audioUrl) {
+    async playAudioBuffer(url) {
         try {
-            await this.initAudioContext();
-            await this.wavesurfer.load(audioUrl);
+            const audioBuffer = this.audioCache.get(url);
+            if (!audioBuffer) {
+                throw new Error('音頻未預加載');
+            }
+
+            // 創建音頻源
+            const source = this.audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(this.audioContext.destination);
+
+            // 更新波形顯示
+            this.wavesurfer.loadDecodedBuffer(audioBuffer);
+
+            // 同步播放
+            source.start(0);
             this.wavesurfer.play();
+
             return new Promise((resolve) => {
-                this.wavesurfer.once('finish', resolve);
+                source.onended = () => {
+                    source.disconnect();
+                    resolve();
+                };
             });
         } catch (error) {
-            console.error('播放出錯:', error);
+            console.error('播放音頻失敗:', error);
             throw error;
         }
     }
