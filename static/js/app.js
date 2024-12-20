@@ -138,12 +138,20 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const response = await fetch('/get-settings');
             const data = await response.json();
-            if (data.avatar) {
-                // 從 uploads 目錄獲取頭像
-                avatar.src = '/uploads/' + data.avatar + '?t=' + new Date().getTime();
+            const avatar = document.getElementById('avatar');
+            if (avatar) {
+                if (data.avatar) {
+                    avatar.src = '/uploads/' + data.avatar + '?t=' + new Date().getTime();
+                } else {
+                    avatar.src = '/static/images/default-avatar.png';
+                }
             }
         } catch (error) {
             console.error('載入頭像失敗:', error);
+            const avatar = document.getElementById('avatar');
+            if (avatar) {
+                avatar.src = '/static/images/default-avatar.png';
+            }
         }
     }
 
@@ -156,7 +164,18 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             const commands = await response.json();
             const commandsList = document.getElementById('commandsList');
+            
+            if (!commandsList) {
+                console.error('找不到指令列表元素');
+                return;
+            }
+
             commandsList.innerHTML = '';
+            
+            if (!Array.isArray(commands) || commands.length === 0) {
+                commandsList.innerHTML = '<div class="empty-message">目前沒有任何指令</div>';
+                return;
+            }
 
             commands.forEach(command => {
                 const li = document.createElement('li');
@@ -209,6 +228,11 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('更新指令列表失敗:', error);
             showNotification('更新指令列表失敗', 'error');
+            
+            const commandsList = document.getElementById('commandsList');
+            if (commandsList) {
+                commandsList.innerHTML = '<div class="error-message">載入失敗，請重試</div>';
+            }
         }
     }
 

@@ -90,7 +90,7 @@ def get_settings():
         if os.path.exists(settings_file):
             with open(settings_file, 'r', encoding='utf-8') as f:
                 return jsonify(json.load(f))
-        return jsonify({'name': '語音助理', 'avatar': 'default-avatar.png'})
+        return jsonify({'name': '語音助理', 'avatar': None})
     except Exception as e:
         logger.error(f"Get settings failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -262,6 +262,14 @@ def uploaded_file(filename):
         return send_from_directory(user_folder, filename)
     except Exception as e:
         logger.error(f"File access failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/static/images/<path:filename>')
+def serve_static_image(filename):
+    try:
+        return send_from_directory('static/images', filename)
+    except Exception as e:
+        logger.error(f"Serve static image failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':

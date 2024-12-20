@@ -7,19 +7,25 @@ class AudioProcessor {
         this.processingTimeout = null;
         this.restartAttempts = 0;
         this.maxRestartAttempts = 3;
-        this.restartDelay = 50; // 降低重啟延遲
+        this.restartDelay = 50;
         this.noSpeechTimeout = null;
         this.audioContext = null;
         this.initSpeechRecognition();
-        this.initAudioContext();
     }
 
-    initAudioContext() {
+    async initAudioContext() {
+        if (this.audioContext) return;
+        
         try {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
                 latencyHint: 'interactive',
                 sampleRate: 48000
             });
+
+            // 如果上下文被暫停，嘗試恢復
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
         } catch (error) {
             console.error('無法初始化音頻上下文:', error);
         }
@@ -45,17 +51,18 @@ class AudioProcessor {
                 
                 if (this.isListening && this.restartAttempts < this.maxRestartAttempts) {
                     this.restartAttempts++;
-                    // 使用 requestAnimationFrame 優化重啟時機
-                    requestAnimationFrame(() => {
+                    setTimeout(() => {
                         if (this.isListening) {
                             try {
                                 this.recognition.start();
                             } catch (error) {
-                                console.error('重啟失敗:', error);
-                                this.handleRecognitionError(error);
+                                if (error.name !== 'InvalidStateError') {
+                                    console.error('重啟失敗:', error);
+                                    this.handleRecognitionError(error);
+                                }
                             }
                         }
-                    });
+                    }, this.restartDelay);
                 } else if (this.restartAttempts >= this.maxRestartAttempts) {
                     this.isListening = false;
                     showNotification('請重新開始語音識別', 'warning');
@@ -102,7 +109,7 @@ class AudioProcessor {
             if (this.isListening) {
                 this.restartRecognition();
             }
-        }, 10000); // 10秒無語音自動重啟
+        }, 10000);
     }
 
     clearNoSpeechTimeout() {
@@ -116,13 +123,15 @@ class AudioProcessor {
         if (this.recognition && this.isListening) {
             try {
                 this.recognition.stop();
-                requestAnimationFrame(() => {
+                setTimeout(() => {
                     if (this.isListening) {
                         this.recognition.start();
                     }
-                });
+                }, this.restartDelay);
             } catch (error) {
-                console.error('重啟識別失敗:', error);
+                if (error.name !== 'InvalidStateError') {
+                    console.error('重啟識別失敗:', error);
+                }
             }
         }
     }
@@ -141,7 +150,7 @@ class AudioProcessor {
                 message = '請允許使用麥克風';
                 break;
             case 'aborted':
-                return; // 忽略中斷錯誤
+                return;
         }
         
         showNotification(message, 'error');
@@ -159,6 +168,8 @@ class AudioProcessor {
         }
 
         try {
+            await this.initAudioContext();
+            
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
                     echoCancellation: true,
@@ -169,17 +180,21 @@ class AudioProcessor {
                 } 
             });
 
-            if (this.audioContext && this.audioContext.state === 'suspended') {
-                await this.audioContext.resume();
-            }
-
             stream.getTracks().forEach(track => track.stop());
             
-            this.isListening = true;
-            this.lastProcessedText = '';
-            this.restartAttempts = 0;
-            this.recognition.start();
-            
+            if (!this.isListening) {
+                this.isListening = true;
+                this.lastProcessedText = '';
+                this.restartAttempts = 0;
+                try {
+                    this.recognition.start();
+                } catch (error) {
+                    if (error.name !== 'InvalidStateError') {
+                        console.error('啟動失敗:', error);
+                        this.handleRecognitionError(error);
+                    }
+                }
+            }
         } catch (error) {
             console.error('啟動失敗:', error);
             this.handleRecognitionError(error);
@@ -193,7 +208,9 @@ class AudioProcessor {
             try {
                 this.recognition.stop();
             } catch (error) {
-                console.error('停止識別失敗:', error);
+                if (error.name !== 'InvalidStateError') {
+                    console.error('停止識別失敗:', error);
+                }
             }
         }
     }
@@ -224,16 +241,13 @@ class AudioProcessor {
                 
                 if (data.audio) {
                     try {
-                        if (this.audioContext && this.audioContext.state === 'suspended') {
-                            await this.audioContext.resume();
-                        }
+                        await this.initAudioContext();
                         await this.playAudio('/uploads/' + data.audio);
                         
                         if (wasListening) {
-                            // 使用 requestAnimationFrame 優化重啟時機
-                            requestAnimationFrame(() => {
+                            setTimeout(() => {
                                 this.startListening();
-                            });
+                            }, this.restartDelay);
                         }
                     } catch (error) {
                         console.error('播放失敗:', error);
@@ -252,9 +266,7 @@ class AudioProcessor {
 
     async playAudio(audioUrl) {
         try {
-            if (this.audioContext && this.audioContext.state === 'suspended') {
-                await this.audioContext.resume();
-            }
+            await this.initAudioContext();
             await this.wavesurfer.load(audioUrl);
             this.wavesurfer.play();
             return new Promise((resolve) => {
@@ -274,11 +286,8 @@ function showNotification(message, type = 'info', duration = 2000) {
         notification.className = 'notification ' + type;
         notification.style.display = 'block';
         
-        // 使用 requestAnimationFrame 優化動畫
-        requestAnimationFrame(() => {
-            setTimeout(() => {
-                notification.style.display = 'none';
-            }, duration);
-        });
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, duration);
     }
 }
