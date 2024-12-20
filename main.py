@@ -182,6 +182,43 @@ def process_command():
         logger.error(f"Process command failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/delete-command', methods=['POST'])
+def delete_command():
+    try:
+        data = request.get_json()
+        if not data or 'text' not in data:
+            return jsonify({"error": "No command text provided"}), 400
+        
+        command_text = data['text'].lower().strip()
+        user_folder = get_user_folder()
+        commands_file = os.path.join(user_folder, 'commands.json')
+        
+        if not os.path.exists(commands_file):
+            return jsonify({"error": "No commands file found"}), 404
+        
+        with open(commands_file, 'r', encoding='utf-8') as f:
+            commands = json.load(f)
+        
+        # 找到要刪除的指令
+        for cmd in commands[:]:
+            if cmd['text'].lower() == command_text:
+                # 刪除關聯的音頻文件
+                audio_file = os.path.join(user_folder, cmd['audio'])
+                if os.path.exists(audio_file):
+                    os.remove(audio_file)
+                commands.remove(cmd)
+                
+                # 保存更新後的指令列表
+                with open(commands_file, 'w', encoding='utf-8') as f:
+                    json.dump(commands, f, ensure_ascii=False)
+                
+                return jsonify({"message": "Command deleted successfully"})
+        
+        return jsonify({"error": "Command not found"}), 404
+    except Exception as e:
+        logger.error(f"Delete command failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/upload-avatar', methods=['POST'])
 def upload_avatar():
     try:
@@ -219,18 +256,17 @@ def upload_avatar():
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     try:
-        user_folder = get_user_folder()
+        if 'user_id' not in session:
+            return jsonify({"error": "No user session"}), 401
+        user_folder = os.path.join(app.config['UPLOAD_FOLDER'], session['user_id'])
         return send_from_directory(user_folder, filename)
     except Exception as e:
-        logger.error(f"Get file failed: {str(e)}")
-        return jsonify({"error": str(e)}), 404
+        logger.error(f"File access failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5003))
     app.run(host='0.0.0.0', port=port, debug=False)
 else:
-    # Gunicorn 使用
+    # 確保在生產環境中創建必要的目錄
     ensure_directories()
-    app.config['ENV'] = 'production'
-    app.config['DEBUG'] = False
-    application = app

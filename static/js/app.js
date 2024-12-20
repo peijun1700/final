@@ -155,71 +155,56 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('獲取指令列表失敗');
             }
             const commands = await response.json();
-            
-            const commandList = document.getElementById('commandList');
-            if (!commandList) {
-                console.error('找不到指令列表元素');
-                return;
-            }
+            const commandsList = document.getElementById('commandsList');
+            commandsList.innerHTML = '';
 
-            commandList.innerHTML = '';
-            
-            if (!Array.isArray(commands) || commands.length === 0) {
-                commandList.innerHTML = '<div class="empty-message">目前沒有任何指令</div>';
-                return;
-            }
-            
             commands.forEach(command => {
-                const li = document.createElement('div');
+                const li = document.createElement('li');
                 li.className = 'command-item';
                 
-                const commandText = document.createElement('span');
-                commandText.textContent = command.text;
-                commandText.className = 'command-text';
+                const textSpan = document.createElement('span');
+                textSpan.textContent = command.text;
+                textSpan.className = 'command-text';
                 
-                const buttonContainer = document.createElement('div');
-                buttonContainer.className = 'command-buttons';
-                
-                // 播放按鈕
-                const playButton = document.createElement('button');
-                playButton.className = 'play-button';
-                playButton.innerHTML = '<i class="fas fa-play"></i>';
-                playButton.onclick = () => audioProcessor.playAudio('/uploads/' + command.audio);
-                
-                // 刪除按鈕
                 const deleteButton = document.createElement('button');
-                deleteButton.className = 'delete-button';
                 deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
+                deleteButton.className = 'delete-btn';
+                
                 deleteButton.onclick = async () => {
-                    if (confirm('確定要刪除這個指令嗎？')) {
-                        try {
-                            const response = await fetch('/delete-command', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({ text: command.text })
-                            });
-                            
-                            if (!response.ok) {
-                                throw new Error('刪除失敗');
-                            }
-                            
-                            showNotification('指令已刪除', 'success');
-                            updateCommandList();
-                        } catch (error) {
-                            console.error('刪除指令失敗:', error);
-                            showNotification('刪除失敗', 'error');
+                    try {
+                        const response = await fetch('/delete-command', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ text: command.text })
+                        });
+
+                        if (!response.ok) {
+                            const data = await response.json();
+                            throw new Error(data.error || '刪除失敗');
                         }
+
+                        showNotification('指令已刪除', 'success');
+                        await updateCommandList();
+                    } catch (error) {
+                        console.error('刪除指令失敗:', error);
+                        showNotification(error.message || '刪除失敗', 'error');
                     }
                 };
+
+                const playButton = document.createElement('button');
+                playButton.innerHTML = '<i class="fas fa-play"></i>';
+                playButton.className = 'play-btn';
                 
-                buttonContainer.appendChild(playButton);
-                buttonContainer.appendChild(deleteButton);
+                playButton.onclick = () => {
+                    audioProcessor.playAudio('/uploads/' + command.audio);
+                };
                 
-                li.appendChild(commandText);
-                li.appendChild(buttonContainer);
-                commandList.appendChild(li);
+                li.appendChild(textSpan);
+                li.appendChild(playButton);
+                li.appendChild(deleteButton);
+                commandsList.appendChild(li);
             });
         } catch (error) {
             console.error('更新指令列表失敗:', error);
